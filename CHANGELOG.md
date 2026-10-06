@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2
+
+- Declare the diagnostic checks that contact outside services: the connectivity test (pings 1.1.1.1,
+  looks up example.com) and the dnf/pacman/zypper update checks (your distro's mirrors). Documented in
+  PRIVACY.md and the READMEs, and labeled in `tux-scan` output.
+- Document that tux's web searches in Claude Code go through Claude Code's own search
+
 ## 0.1.1
 
 - Read-only commands are auto-approved only if you turn on the plugin's "Auto-approve read-only

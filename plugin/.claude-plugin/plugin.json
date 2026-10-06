@@ -1,7 +1,7 @@
 {
   "name": "tux",
   "displayName": "tux: Linux troubleshooter",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A Linux troubleshooting agent: diagnoses hardware and software problems on your machine, explains what it finds, and applies fixes with your approval.",
   "author": {
     "name": "Sahil Lukose",

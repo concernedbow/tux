@@ -41,7 +41,12 @@ this setting says.
 
 The tux project has **no servers and collects nothing**. To diagnose problems, what tux reads (your
 messages, command output, log excerpts, and contents of files it reads or edits) is sent to **Anthropic**
-through Claude Code, under your Claude account. The background monitor sends nothing anywhere. tux
+through Claude Code, under your Claude account, along with any web searches tux makes to look up errors.
+tux declares no connectors and sends your data nowhere else. Two diagnostic checks contact outside
+services without sending personal data. The `network` scan pings `1.1.1.1` (Cloudflare) and looks up
+`example.com` to test connectivity. On Fedora, Arch and openSUSE, the `packages` scan refreshes repository
+metadata from your distro's mirrors to check for updates. Both are part of `/tux:doctor`. The background
+monitor sends nothing anywhere. tux
 never reads SSH keys, keyrings, password stores, browser logins or `.env` files. Everything it stores
 (notes, the undo journal and its backups, monitor history) stays on your machine, readable only by your
 account.

@@ -138,7 +138,9 @@ SCANS: dict[str, list[tuple[str, str, str | None]]] = {
         ("networkmanager", "nmcli general status && nmcli device status", "nmcli"),
         ("wifi", "nmcli -f IN-USE,SSID,SIGNAL,SECURITY device wifi list 2>/dev/null | head -10", "nmcli"),
         ("rfkill", "rfkill list", "rfkill"),
-        ("connectivity", "ping -c 2 -W 2 1.1.1.1 2>&1 | tail -2; getent hosts example.com || echo 'DNS lookup failed'", None),
+        # contacts outside services (declared in PRIVACY.md): 2 pings to Cloudflare, 1 DNS lookup
+        ("connectivity (pings 1.1.1.1, looks up example.com)",
+         "ping -c 2 -W 2 1.1.1.1 2>&1 | tail -2; getent hosts example.com || echo 'DNS lookup failed'", None),
         ("network drivers", "lspci -k | grep -A3 -i -E 'network|ethernet'", "lspci"),
         ("errors", "journalctl -b --no-pager -q -u NetworkManager -p 4 -n 20", "journalctl"),
     ],
@@ -197,6 +199,8 @@ SCANS: dict[str, list[tuple[str, str, str | None]]] = {
 def _package_scan() -> list[tuple[str, str, str | None]]:
     pm = package_manager()
     rows: list[tuple[str, str, str | None]] = [("package manager", f"echo {pm}", None)]
+    # dnf/pacman/zypper update checks refresh metadata from the distro's mirrors (declared in PRIVACY.md);
+    # apt only reads its local cache
     if pm == "apt":
         rows += [
             ("broken/half-installed", "dpkg -l | grep -v -E '^(ii|rc|hi)' | tail -n +6 | head -20", None),
@@ -205,11 +209,13 @@ def _package_scan() -> list[tuple[str, str, str | None]]:
             ("dpkg/apt locks", "lsof /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock 2>/dev/null", "lsof"),
         ]
     elif pm == "dnf":
-        rows += [("upgradable", "dnf -q check-update | head -25", None), ("history", "dnf history | head -10", None)]
+        rows += [("upgradable (contacts your mirrors)", "dnf -q check-update | head -25", None),
+                 ("history", "dnf history | head -10", None)]
     elif pm == "pacman":
-        rows += [("upgradable", "checkupdates 2>/dev/null | head -25", None), ("orphans", "pacman -Qdtq | head", None)]
+        rows += [("upgradable (contacts your mirrors)", "checkupdates 2>/dev/null | head -25", None),
+                 ("orphans", "pacman -Qdtq | head", None)]
     elif pm == "zypper":
-        rows += [("upgradable", "zypper -q lu | head -25", None)]
+        rows += [("upgradable (contacts your mirrors)", "zypper -q lu | head -25", None)]
     if have("snap"):
         rows.append(("snaps", "snap list", None))
     if have("flatpak"):

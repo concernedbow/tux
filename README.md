@@ -73,7 +73,7 @@ asking, turn on the plugin's **Auto-approve read-only commands** setting (`/conf
 ### Option B: the `tux` command
 
 ```bash
-pipx install git+https://github.com/concernedbow/tux@v0.1.1
+pipx install git+https://github.com/concernedbow/tux@v0.1.2
 tux                   # interactive
 tux doctor            # full health check
 /undo, /changes       # inside the app: revert a change, list what tux changed
@@ -116,8 +116,11 @@ files it reads or edits) to **Anthropic**:
 
 - **Claude Code plugin:** through Claude Code, under your Claude account and plan terms.
 - **`tux --api`:** directly to Anthropic's API with your key. Web search queries go through Anthropic's
-  search tool unless you pass `--no-web`.
+  search tool unless you pass `--no-web`. (In Claude Code, tux's web searches use Claude Code's own search.)
 - **Background monitor:** sends nothing anywhere. It's entirely local.
+- **Network and update checks** (in `/tux:doctor`, or `tux-scan network` / `tux-scan packages`): ping
+  `1.1.1.1` (Cloudflare) and look up `example.com` to test connectivity. On Fedora, Arch and openSUSE they
+  also refresh package metadata from your distro's mirrors to check for updates. No personal data is sent.
 
 tux never reads SSH keys, keyrings, password stores, browser logins or `.env` files. Command output can
 still include details like your hostname, serial numbers and network names. Everything tux stores
