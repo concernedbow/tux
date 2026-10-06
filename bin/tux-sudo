@@ -1,0 +1,5 @@
+#!/bin/sh
+# Run a command as root, asking for the password in a graphical dialog
+# (Claude Code's shell has no terminal for sudo to prompt on).
+# If no dialog is available, tell the user to run the command themselves with `! sudo ...`.
+SUDO_ASKPASS="$(dirname "$(readlink -f "$0")")/tux-askpass" exec sudo -A "$@"

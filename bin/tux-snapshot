@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+"""Print a summary of this machine plus notes saved from earlier tux sessions."""
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
+from tux import sysinfo
+from tux.notes import NOTES_FILE, load_notes
+
+print(sysinfo.snapshot())
+notes = load_notes()
+print(f"\nNotes from previous sessions ({NOTES_FILE}):\n{notes}" if notes else "\nNo notes from previous sessions yet.")

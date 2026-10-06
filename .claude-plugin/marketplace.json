@@ -1,0 +1,13 @@
+{
+  "name": "tux",
+  "description": "tux: an AI Linux troubleshooting agent for Claude Code.",
+  "owner": { "name": "Sahil Lukose", "url": "https://github.com/concernedbow" },
+  "plugins": [
+    {
+      "name": "tux",
+      "source": "./",
+      "description": "Diagnose and fix Linux hardware and software problems with Claude.",
+      "category": "system"
+    }
+  ]
+}

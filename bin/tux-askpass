@@ -1,0 +1,13 @@
+#!/bin/sh
+# Graphical password prompt for `sudo -A`.
+msg="tux wants to run a command as root. Enter your password to allow it (check the command in Claude Code first)."
+if [ -n "$DISPLAY$WAYLAND_DISPLAY" ]; then
+  command -v zenity  >/dev/null && exec zenity --password --title="tux: administrator access"
+  command -v kdialog >/dev/null && exec kdialog --password "$msg" --title "tux"
+  command -v yad     >/dev/null && exec yad --entry --hide-text --title="tux" --text="$msg"
+  for p in /usr/bin/ssh-askpass /usr/lib/ssh/ssh-askpass /usr/libexec/openssh/ssh-askpass /usr/lib/openssh/gnome-ssh-askpass; do
+    [ -x "$p" ] && exec "$p" "$msg"
+  done
+fi
+echo "tux-askpass: no graphical password dialog available (install zenity, or ask the user to run: ! sudo <command>)" >&2
+exit 1

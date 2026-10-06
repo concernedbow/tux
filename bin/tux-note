@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+"""Remember a durable fact about this machine: tux-note "webcam needs the ipu6 HAL plugin" """
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
+from tux.notes import add_note
+
+if len(sys.argv) < 2:
+    sys.exit('usage: tux-note "one-line fact about this machine"')
+print(f"Saved to {add_note(' '.join(sys.argv[1:]))}")

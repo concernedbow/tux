@@ -1,0 +1,11 @@
+{
+  "name": "tux",
+  "displayName": "tux: Linux troubleshooter",
+  "version": "0.1.0",
+  "description": "A Linux troubleshooting agent: diagnoses hardware and software problems on your machine, explains what it finds, and applies fixes with your approval.",
+  "author": { "name": "Sahil Lukose", "url": "https://github.com/concernedbow" },
+  "homepage": "https://github.com/concernedbow/tux",
+  "repository": "https://github.com/concernedbow/tux",
+  "license": "MIT",
+  "keywords": ["linux", "troubleshooting", "sysadmin", "hardware", "diagnostics"]
+}
