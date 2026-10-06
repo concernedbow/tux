@@ -30,6 +30,8 @@ PipeWire falls back to the low-quality HSP profile after each reconnect. Two fix
   known bugs in your exact versions.
 - **Fixes things, with your approval**: installs packages, edits configs (backing them up first), and
   restarts services, then checks that the fix worked.
+- **Undoes its own changes**: every config edit, package install or removal, and service change is
+  recorded, and `/tux:undo` (or just "undo that") reverses it. See [Undo](#undo).
 - **Remembers your machine**: hardware quirks and past fixes are saved to `~/.config/tux/notes.md`, so the
   next session starts with them.
 
@@ -54,8 +56,8 @@ claude --agent tux:tux                          # interactive
 claude --agent tux:tux "why is my fan so loud?"  # start with a question
 ```
 
-Inside any Claude Code session you can also run `/tux:doctor` for a full health check, or just
-ask: *"use tux to figure out why my wifi keeps dropping"*.
+Inside any Claude Code session you can also run `/tux:doctor` for a full health check, `/tux:undo` to
+revert a change, or just ask: *"use tux to figure out why my wifi keeps dropping"*.
 
 Optionally, add a shortcut to your shell profile: `alias tux='claude --agent tux:tux'`
 
@@ -65,6 +67,7 @@ Optionally, add a shortcut to your shell profile: `alias tux='claude --agent tux
 pipx install git+https://github.com/concernedbow/tux
 tux                   # interactive
 tux doctor            # full health check
+/undo, /changes       # inside the app: revert a change, list what tux changed
 tux "is my SSD healthy?"
 tux --read-only ...   # diagnose only, never change anything
 ```
@@ -90,8 +93,7 @@ approval. Output redirection, `$(...)`, `sed -i`, and `find -delete` all count a
 
 Other safeguards:
 - **Secrets stay private**: tux refuses to read SSH keys, password stores, browser credentials, or `.env` files.
-- **Backups**: configs are backed up before tux edits them.
-- **Audit log**: every change tux makes is logged to `~/.local/state/tux/actions.log`.
+- **Undo**: every change is journaled with what's needed to reverse it (see below).
 - **Root access** goes through a graphical password prompt (`tux-sudo`), so you can see each root command
   before you allow it. On a headless machine, tux asks you to run root commands yourself with `! sudo …`.
 - **Scoped**: the plugin's permission hook applies only in tux sessions. Your other Claude Code sessions behave as before.
@@ -99,15 +101,44 @@ Other safeguards:
 **Privacy:** command output and log excerpts are sent to Claude to be analysed. Don't use tux on
 machines where that isn't acceptable.
 
+## Undo
+
+tux records every change it makes in a journal (`~/.local/state/tux/journal.jsonl`):
+
+- **File edits** keep the previous content. Undo restores it, or deletes the file if tux created it.
+  Ownership and permissions are kept.
+- **Package and service changes** are checked before and after they run. The undo is worked out from
+  what actually changed: undoing `apt install vim curl` removes only the packages that weren't already
+  installed, and undoing `systemctl enable --now tlp` disables and stops tlp only if it wasn't already
+  enabled and running. Supports apt, dnf, yum, zypper, pacman, snap, flatpak, apt-mark holds, and systemctl
+  enable/disable/start/stop/mask/unmask.
+
+Before anything is reverted, tux shows exactly what will happen (the diff or the commands) and asks for
+approval. It also refuses unsafe undos:
+- It won't overwrite a file you edited after tux changed it (unless you confirm with `--force`).
+- It won't undo an older edit while a newer edit to the same file is still in place.
+- Commands it can't reverse reliably, such as pipelines or custom scripts, are reported as manual,
+  never guessed.
+
+If a later command rebuilt files from that config (`update-grub`, `update-initramfs`, …), tux re-runs it
+after restoring the file. Undos are journaled too, so an undo can be undone.
+
+```bash
+tux-undo list        # in Claude Code the agent runs these for you
+tux-undo show 3      # what undoing #3 would do (changes nothing)
+tux-undo 3           # undo it (you approve it in the permission prompt)
+```
+
 ## How it works
 
 ```
 .claude-plugin/     plugin + marketplace manifests
 agents/tux.md       the troubleshooting agent (Claude Code mode)
-skills/doctor/      /tux:doctor health check
-hooks/hooks.json    → scripts/guard.py: allow / ask / deny each command, log changes
-bin/                tux-scan, tux-snapshot, tux-note, tux-sudo (on the agent's PATH)
-tux/                Python package: safety classifier, diagnostics, API-mode agent + terminal app
+skills/             /tux:doctor health check, /tux:undo
+hooks/hooks.json    → scripts/guard.py: allow / ask / deny each command, journal changes
+bin/                tux-scan, tux-snapshot, tux-note, tux-backup, tux-undo, tux-sudo (on the agent's PATH)
+tux/                Python package: safety classifier, diagnostics, change journal + undo,
+                    API-mode agent + terminal app
 ```
 
 Both modes share the same safety classifier and diagnostics. In API mode, tux runs its own agent loop

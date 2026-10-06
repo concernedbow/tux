@@ -2,9 +2,13 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|Read",
+        "matcher": "Bash|Read|Write|Edit",
         "hooks": [
-          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}\"/scripts/guard.py", "timeout": 10 }
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}\"/scripts/guard.py",
+            "timeout": 30
+          }
         ]
       }
     ],
@@ -12,7 +16,11 @@
       {
         "matcher": "Bash|Write|Edit",
         "hooks": [
-          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}\"/scripts/guard.py", "timeout": 10 }
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}\"/scripts/guard.py",
+            "timeout": 30
+          }
         ]
       }
     ]

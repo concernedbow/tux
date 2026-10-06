@@ -1,0 +1,22 @@
+#!/usr/bin/env python3
+"""Snapshot files before editing them with a shell command, so `tux-undo` can restore them.
+
+  tux-backup /etc/default/grub [more files...]
+"""
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
+from tux import journal
+from tux.plugin_runner import run
+
+if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
+    sys.exit(__doc__.strip())
+j = journal.Journal()
+for path in sys.argv[1:]:
+    path = os.path.abspath(os.path.expanduser(path))
+    try:
+        before = journal.read_with_root(path, run)
+    except PermissionError as e:
+        sys.exit(f"tux-backup: {e}")
+    entry = j.record_file(path, before, None, summary=f"snapshot of {path} before editing", source="plugin")
+    state = "saved" if before is not None else "noted as not existing yet (undo deletes it)"
+    print(f"{path}: {state}. Change #{entry.id}; restore with: tux-undo {entry.id}")

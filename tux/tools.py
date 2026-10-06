@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import difflib
-import json
 import os
 import shutil
 import signal
@@ -14,14 +12,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Protocol
 
-from . import notes, sysinfo
+from . import journal, notes, sysinfo
 from .safety import Risk, Verdict, classify, is_sensitive_path
 
 MAX_OUTPUT_CHARS = 30_000
 
-STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "tux"
-ACTION_LOG = STATE_DIR / "actions.log"
-BACKUP_DIR = STATE_DIR / "backups"
 
 
 def _tool(name: str, description: str, properties: dict, required: list[str]) -> dict:
@@ -102,6 +97,20 @@ TOOL_DEFS = [
         {"note": {"type": "string"}},
         ["note"],
     ),
+    _tool(
+        "undo_change",
+        "List, inspect, or undo changes tux made (file edits, package installs/removals, service changes). "
+        "Use when the user wants to revert something, or a fix made things worse. 'list' shows recent "
+        "changes; 'show' explains exactly what undoing one would do; 'undo' reverts it after the user "
+        "approves. Omit change_id to target the most recent change.",
+        {
+            "action": {"type": "string", "enum": ["list", "show", "undo"]},
+            "change_id": {"type": "integer"},
+            "force": {"type": "boolean", "description": "Restore even if the file was modified since tux "
+                                                        "changed it. Only after the user agrees."},
+        },
+        ["action"],
+    ),
 ]
 
 WEB_SEARCH_TOOL = {"type": "web_search_20260209", "name": "web_search", "max_uses": 5}
@@ -118,6 +127,15 @@ class ToolContext:
     read_only: bool = False
     on_line: Callable[[str], None] | None = None
     always_allowed: set[str] = field(default_factory=set)
+    prober: Callable[[str], dict] | None = None   # state probes for undo; injectable for tests
+
+    @property
+    def journal(self) -> journal.Journal:
+        return journal.Journal(prober=self.prober)
+
+    def runner(self, command: str) -> tuple[int, str]:
+        """Run a journal/undo step; steps starting with `sudo ` prompt on the terminal."""
+        return _exec(command, 600, interactive_sudo=command.startswith("sudo "), on_line=self.on_line)
 
 
 def _truncate(text: str) -> str:
@@ -125,16 +143,6 @@ def _truncate(text: str) -> str:
         return text
     half = MAX_OUTPUT_CHARS // 2
     return f"{text[:half]}\n\n... [{len(text) - MAX_OUTPUT_CHARS} chars truncated] ...\n\n{text[-half:]}"
-
-
-def log_action(kind: str, detail: str, outcome: str) -> None:
-    try:
-        STATE_DIR.mkdir(parents=True, exist_ok=True)
-        stamp = dt.datetime.now().isoformat(timespec="seconds")
-        with ACTION_LOG.open("a") as f:
-            f.write(json.dumps({"time": stamp, "kind": kind, "detail": detail, "outcome": outcome}) + "\n")
-    except OSError:
-        pass
 
 
 def _exec(command: str, timeout: int, interactive_sudo: bool,
@@ -185,7 +193,6 @@ def run_command(ctx: ToolContext, command: str, purpose: str, timeout_seconds: i
     timeout = max(1, min(int(timeout_seconds or 60), 900))
 
     if verdict.risk is Risk.BLOCKED:
-        log_action("command", command, f"blocked: {verdict.reason}")
         return (f"BLOCKED by safety policy ({verdict.reason}). Do not retry variants of this command. "
                 "If it is truly needed, explain to the user exactly what to run themselves and why."), True
 
@@ -196,15 +203,25 @@ def run_command(ctx: ToolContext, command: str, purpose: str, timeout_seconds: i
         if command not in ctx.always_allowed:
             ok, note = ctx.approver.approve_command(command, purpose, verdict)
             if not ok:
-                log_action("command", command, "declined")
                 return f"User declined to run this command.{' Their reason: ' + note if note else ''}", True
             if note == "always":
                 ctx.always_allowed.add(command)
 
+    if verdict.risk is not Risk.CHANGE:
+        code, out = _exec(command, timeout, interactive_sudo=verdict.needs_root, on_line=ctx.on_line)
+        return _truncate(f"exit code: {code}\n{out}"), code != 0
+
+    j = ctx.journal
+    before = j.prober(command)
     code, out = _exec(command, timeout, interactive_sudo=verdict.needs_root, on_line=ctx.on_line)
-    if verdict.risk is Risk.CHANGE:
-        log_action("command", command, f"exit {code}")
-    return _truncate(f"exit code: {code}\n{out}"), code != 0
+    entry = j.record_command(command, before, j.prober(command), code, source="api")
+    if entry.inverse:
+        footer = f"[recorded as change #{entry.id}; undo reverses it with: {' && '.join(entry.inverse)}]"
+    elif entry.notes:
+        footer = f"[recorded as change #{entry.id}; not automatically undoable: {'; '.join(entry.notes)}]"
+    else:
+        footer = f"[recorded as change #{entry.id}]"
+    return _truncate(f"exit code: {code}\n{out}\n{footer}"), code != 0
 
 
 def hardware_scan(ctx: ToolContext, area: str) -> tuple[str, bool]:
@@ -237,47 +254,25 @@ def write_file(ctx: ToolContext, path: str, content: str, purpose: str) -> tuple
         return "Refused: this path holds secrets.", True
 
     try:
-        old = p.read_text() if p.exists() else ""
-    except PermissionError:
-        code, old = _exec(f"sudo cat {_q(p)}", 30, interactive_sudo=True)
-        if code != 0:
-            return f"Could not read existing {p} for backup: {old}", True
-    diff = "".join(difflib.unified_diff(old.splitlines(True), content.splitlines(True),
-                                        f"{p} (current)", f"{p} (proposed)"))
-    if not diff:
+        old = journal.read_with_root(str(p), ctx.runner)
+    except PermissionError as e:
+        return f"Could not read existing {p}: {e}", True
+    new = content.encode()
+    diff = "".join(difflib.unified_diff((old or b"").decode(errors="replace").splitlines(True),
+                                        content.splitlines(True), f"{p} (current)", f"{p} (proposed)"))
+    if old == new:
         return "No changes: the file already has this content.", False
 
     ok, note = ctx.approver.approve_write(str(p), diff, purpose)
     if not ok:
-        log_action("write", str(p), "declined")
         return f"User declined the edit.{' Their reason: ' + note if note else ''}", True
 
-    backup = ""
-    if p.exists():
-        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-        stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-        backup_path = BACKUP_DIR / f"{str(p).strip('/').replace('/', '__')}.{stamp}"
-        backup_path.write_text(old)
-        backup = str(backup_path)
-
-    probe = p if p.exists() else next(d for d in p.parents if d.exists())
-    needs_root = not os.access(probe, os.W_OK)
-    if needs_root:
-        tmp = STATE_DIR / "pending-write"
-        STATE_DIR.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(content)
-        code, out = _exec(f"sudo install -D -m 644 {_q(tmp)} {_q(p)}" if not p.exists()
-                          else f"sudo cp {_q(tmp)} {_q(p)}", 60, interactive_sudo=True)
-        tmp.unlink(missing_ok=True)
-        if code != 0:
-            return f"sudo write failed: {out}", True
-    else:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content)
-
-    log_action("write", str(p), f"ok backup={backup or 'none (new file)'}")
-    restore = f" Restore with: {'sudo ' if needs_root else ''}cp {backup} {p}" if backup else ""
-    return f"Wrote {p}.{restore}", False
+    j = ctx.journal
+    code, out = journal.write_with_root(str(p), new, ctx.runner, j.root)
+    if code != 0:
+        return f"Write failed: {out}", True
+    entry = j.record_file(str(p), old, new, summary=purpose or f"edit {p}", source="api")
+    return f"Wrote {p}. Recorded as change #{entry.id} (the previous version is saved; undo_change can restore it).", False
 
 
 def _q(p: Path | str) -> str:
@@ -317,6 +312,33 @@ def remember(ctx: ToolContext, note: str) -> tuple[str, bool]:
     return f"Saved to {notes.add_note(note)}.", False
 
 
+def undo_change(ctx: ToolContext, action: str, change_id: int | None = None,
+                force: bool = False) -> tuple[str, bool]:
+    j = ctx.journal
+    if action == "list":
+        entries = j.entries()[-25:]
+        return ("\n".join(journal.describe(e) for e in entries) if entries else "No changes recorded yet."), False
+
+    entry = j.resolve(change_id)
+    if entry is None:
+        return ("No change with that id." if change_id is not None else "Nothing to undo."), True
+    plan = j.plan(entry, lambda p: journal.read_with_root(p, ctx.runner), force)
+    if action == "show" or plan.blocked:
+        return plan.render(), bool(plan.blocked)
+
+    if ctx.read_only:
+        return "Not undone: tux is in read-only mode.\n" + plan.render(), True
+    needs_root = any(s.startswith("sudo ") for s in plan.steps + plan.follow_up) or (
+        entry.path is not None and not os.access(entry.path if os.path.exists(entry.path)
+                                                 else os.path.dirname(entry.path), os.W_OK))
+    ok, note = ctx.approver.approve_command(plan.render(), f"Undo change #{entry.id}",
+                                            Verdict(Risk.CHANGE, "reverts an earlier change", needs_root))
+    if not ok:
+        return f"User declined the undo.{' Their reason: ' + note if note else ''}", True
+    result = j.undo(entry.id, ctx.runner, force=force)
+    return result.message, not result.ok
+
+
 HANDLERS = {
     "run_command": run_command,
     "hardware_scan": hardware_scan,
@@ -324,6 +346,7 @@ HANDLERS = {
     "write_file": write_file,
     "search_logs": search_logs,
     "remember": remember,
+    "undo_change": undo_change,
 }
 
 _JSON_TYPES = {"string": str, "integer": int, "boolean": bool}

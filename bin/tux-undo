@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""Undo changes tux made.
+
+  tux-undo list               recent changes and whether each can be undone
+  tux-undo show [ID|last]     exactly what undoing a change would do (changes nothing)
+  tux-undo [ID|last] [--force]  undo it (--force restores a file even if it was edited since)
+"""
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
+from tux import journal
+from tux.plugin_runner import run
+
+args = [a for a in sys.argv[1:] if a != "--force"]
+force = "--force" in sys.argv[1:]
+j = journal.Journal()
+
+if args[:1] in (["-h"], ["--help"]):
+    print(__doc__.strip())
+elif args[:1] == ["list"]:
+    entries = j.entries()[-25:]
+    print("\n".join(journal.describe(e) for e in entries) if entries else "No changes recorded yet.")
+elif args[:1] == ["show"]:
+    entry = j.resolve(args[1] if len(args) > 1 else None)
+    if entry is None:
+        sys.exit("No matching change." if len(args) > 1 else "Nothing to undo.")
+    print(j.plan(entry, lambda p: journal.read_with_root(p, run), force).render())
+else:
+    result = j.undo(args[0] if args else None, run, force=force)
+    print(result.message)
+    sys.exit(0 if result.ok else 1)

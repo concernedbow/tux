@@ -151,7 +151,8 @@ READ_ONLY_COMMANDS: dict[str, object] = {
     "docker": _first_arg_in("ps", "images", "info", "version", "logs", "inspect", "stats"),
     "python3": lambda a: a in (["--version"], ["-V"]),
     # tux's own helpers (tux-note only appends to tux's notes file)
-    "tux-scan": None, "tux-snapshot": None, "tux-note": None,
+    "tux-scan": None, "tux-snapshot": None, "tux-note": None, "tux-backup": None,
+    "tux-undo": lambda a: bool(a) and a[0] in ("list", "show", "-h", "--help"),
 }
 
 SHELL_SPLIT = re.compile(r"\|\||&&|;|\||&")

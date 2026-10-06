@@ -15,7 +15,7 @@ from rich.prompt import Prompt
 from rich.syntax import Syntax
 from rich.text import Text
 
-from . import __version__, notes, prompts, sysinfo, tools
+from . import __version__, journal, notes, prompts, sysinfo, tools
 from .agent import DEFAULT_MODEL, Agent
 from .safety import Verdict
 
@@ -26,7 +26,8 @@ HELP = """\
   /doctor         full system health check
   /scan <area>    run a diagnostic scan yourself (no AI): {areas}
   /notes          show what tux remembers about this machine
-  /log            show changes tux has made (commands run, files written)
+  /changes        list changes tux has made (alias: /log)
+  /undo [id]      undo a change (default: the most recent one), after showing what it will do
   /clear          start a fresh conversation
   /help           this help
   /exit           quit (or Ctrl-D)
@@ -90,6 +91,7 @@ class TerminalView:
             "write_file": lambda a: f"writing {a.get('path', '')}",
             "search_logs": lambda a: "searching logs " + " ".join(f"{k}={v}" for k, v in a.items()),
             "remember": lambda a: f"remembering: {a.get('note', '')}",
+            "undo_change": lambda a: f"undo: {a.get('action', '')} {a.get('change_id', 'last') if a.get('action') != 'list' else ''}",
         }.get(name, lambda a: name)(args)
         console.print(Text(f"  ▸ {label}", style="cyan"), highlight=False)
 
@@ -143,18 +145,39 @@ class TerminalApprover:
         return self._ask()
 
 
-def _show_log() -> None:
-    try:
-        lines = tools.ACTION_LOG.read_text().splitlines()[-30:]
-    except OSError:
+def _show_changes() -> None:
+    entries = journal.Journal().entries()[-30:]
+    if not entries:
         console.print("[dim]No changes recorded yet.[/dim]")
         return
-    import json
-    for line in lines:
-        e = json.loads(line)
-        console.print(f"[dim]{e['time']}[/dim] {e['kind']:7} {e['detail']}  [dim]→ {e['outcome']}[/dim]",
-                      highlight=False)
-    console.print(f"[dim]Full log: {tools.ACTION_LOG}  Backups: {tools.BACKUP_DIR}[/dim]")
+    for e in entries:
+        console.print(journal.describe(e), highlight=False, markup=False)
+    console.print(f"[dim]Journal: {journal.Journal().file}   Undo one with /undo <id>[/dim]")
+
+
+def _undo(ctx: tools.ToolContext, ref: str) -> None:
+    j = ctx.journal
+    entry = j.resolve(ref or None)
+    if entry is None:
+        console.print("[yellow]" + ("No change with that id." if ref else "Nothing to undo.") + "[/yellow]")
+        return
+    force = False
+    plan = j.plan(entry, lambda p: journal.read_with_root(p, ctx.runner))
+    if plan.blocked and "--force" in plan.blocked:
+        console.print(Panel(plan.render(), title="[yellow]modified since tux changed it[/yellow]", border_style="yellow"))
+        force = Prompt.ask("  Restore anyway and discard those edits?", choices=["y", "n"], default="n") == "y"
+        if not force:
+            return
+        plan = j.plan(entry, lambda p: journal.read_with_root(p, ctx.runner), force=True)
+    if plan.blocked:
+        console.print(Panel(plan.render(), title="[red]can't undo[/red]", border_style="red"))
+        return
+    console.print(Panel(Syntax(plan.render(), "diff", theme="ansi_dark", word_wrap=True),
+                        title=f"[yellow]undo #{entry.id}[/yellow]", title_align="left", border_style="yellow"))
+    if Prompt.ask("  Undo it?", choices=["y", "n"], default="y") != "y":
+        return
+    result = j.undo(entry.id, ctx.runner, force=force)
+    console.print(f"[{'green' if result.ok else 'red'}]{result.message}[/]", highlight=False)
 
 
 def _run_turn(agent: Agent, view: TerminalView, text: str) -> None:
@@ -318,8 +341,13 @@ def run_api(args: argparse.Namespace, question: str) -> None:
             elif cmd == "notes":
                 console.print(notes.load_notes() or "[dim]No notes yet.[/dim]", highlight=False)
                 console.print(f"[dim]{notes.NOTES_FILE}[/dim]")
-            elif cmd == "log":
-                _show_log()
+            elif cmd in ("changes", "log"):
+                _show_changes()
+            elif cmd == "undo":
+                try:
+                    _undo(ctx, rest.strip())
+                except KeyboardInterrupt:
+                    console.print("[yellow]Interrupted.[/yellow]")
             elif cmd == "scan":
                 with console.status(f"[dim]scanning {rest or 'overview'}…[/dim]"):
                     out = sysinfo.scan(rest.strip() or "overview")
