@@ -15,7 +15,7 @@ from rich.prompt import Prompt
 from rich.syntax import Syntax
 from rich.text import Text
 
-from . import __version__, journal, notes, prompts, sysinfo, tools
+from . import __version__, journal, monitor, notes, prompts, sysinfo, tools
 from .agent import DEFAULT_MODEL, Agent
 from .safety import Verdict
 
@@ -28,6 +28,8 @@ HELP = """\
   /notes          show what tux remembers about this machine
   /changes        list changes tux has made (alias: /log)
   /undo [id]      undo a change (default: the most recent one), after showing what it will do
+  /monitor [on|off|status|report] [--every 1h|6h|12h|1d]
+                  opt-in background health checks with desktop notifications (off by default)
   /clear          start a fresh conversation
   /help           this help
   /exit           quit (or Ctrl-D)
@@ -180,6 +182,51 @@ def _undo(ctx: tools.ToolContext, ref: str) -> None:
     console.print(f"[{'green' if result.ok else 'red'}]{result.message}[/]", highlight=False)
 
 
+MONITOR_PITCH = """\
+Background monitoring runs a quick local health check every {every}: disk space, failed services,
+drive health (SMART), kernel storage/hardware errors, OOM kills, GPU hangs, overheating, battery wear.
+It runs locally (no AI, no network, no usage) as a systemd user timer, and shows a desktop
+notification only when something new goes wrong. Turn it off any time with /monitor off."""
+
+
+def monitor_command(args: list[str], confirm: bool = True) -> None:
+    """/monitor and `tux monitor`: enabling always needs an explicit yes from the user."""
+    cmd = args[0] if args else "status"
+    every = args[args.index("--every") + 1] if "--every" in args else monitor.DEFAULT_INTERVAL
+    if cmd in ("on", "enable", "off", "disable"):
+        turning_on = cmd in ("on", "enable")
+        if turning_on:
+            console.print(Panel(MONITOR_PITCH.format(every=every), title="tux background monitoring",
+                                border_style="cyan"))
+            if confirm and Prompt.ask("  Turn it on?", choices=["y", "n"], default="n") != "y":
+                console.print("[dim]Left off.[/dim]")
+                return
+        command = f"tux-monitor {'enable' if turning_on else 'disable'}"
+        j = journal.Journal()
+        before = j.prober(command)
+        try:
+            msg = monitor.enable(every) if turning_on else monitor.disable(purge="--purge" in args)
+        except (RuntimeError, ValueError) as e:
+            console.print(f"[red]{e}[/red]")
+            return
+        entry = j.record_command(command, before, j.prober(command), 0, source="api")
+        console.print(msg, highlight=False)
+        if entry.inverse:
+            console.print(f"[dim]Recorded as change #{entry.id} (/undo {entry.id} reverses it).[/dim]")
+    elif cmd == "status":
+        console.print(monitor.status(), highlight=False, markup=False)
+    elif cmd == "report":
+        console.print(monitor.report(), highlight=False, markup=False)
+    elif cmd == "check":
+        with console.status("[dim]checking…[/dim]"):
+            result = monitor.check()
+        console.print(f"{len(result.new)} new, {len(result.resolved)} resolved, {len(result.active)} active.")
+        if result.active:
+            console.print(monitor.format_findings(result.active), highlight=False, markup=False)
+    else:
+        console.print("[yellow]Usage: /monitor [on|off|status|report|check] [--every 1h|6h|12h|1d][/yellow]")
+
+
 def _run_turn(agent: Agent, view: TerminalView, text: str) -> None:
     try:
         agent.ask(text)
@@ -293,6 +340,11 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     question = " ".join(args.question).strip()
 
+    if args.question and args.question[0] == "monitor":
+        # local and instant in both modes; no need to start Claude
+        monitor_command(args.question[1:])
+        return
+
     import shutil
     if not args.api and shutil.which("claude"):
         run_claude_code(args, question)
@@ -343,6 +395,8 @@ def run_api(args: argparse.Namespace, question: str) -> None:
                 console.print(f"[dim]{notes.NOTES_FILE}[/dim]")
             elif cmd in ("changes", "log"):
                 _show_changes()
+            elif cmd == "monitor":
+                monitor_command(rest.split())
             elif cmd == "undo":
                 try:
                     _undo(ctx, rest.strip())

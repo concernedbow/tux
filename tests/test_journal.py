@@ -284,3 +284,15 @@ def test_probes_query_state_without_changing_it():
 def test_parse_handles_sudo_flags():
     a = parse("sudo -E -u root apt-get install -y foo")
     assert a.kind == "pkg" and a.items == ["foo"] and a.root
+
+
+def test_backups_and_journal_are_private(tmp_path):
+    """Backups can contain copies of root-only files (e.g. Wi-Fi passwords), so only the owner may read them."""
+    import stat
+    j = Journal(root=tmp_path / "state", prober=lambda c: {})
+    f = tmp_path / "wifi.nmconnection"
+    f.write_text("psk=hunter2\n")
+    e = edit(j, f, "psk=changed\n")
+    mode = lambda p: stat.S_IMODE(p.stat().st_mode)  # noqa: E731
+    assert mode(j.root) == 0o700 and mode(j.backups) == 0o700
+    assert mode(j.backups / e.backup) == 0o600 and mode(j.file) == 0o600

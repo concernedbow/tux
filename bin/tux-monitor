@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+"""Opt-in background health monitoring. Run `tux-monitor help` for usage."""
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
+from tux.monitor import main
+
+main()

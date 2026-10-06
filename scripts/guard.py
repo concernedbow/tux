@@ -40,11 +40,26 @@ def pending_path(event: dict) -> str:
 def save_pending(event: dict, data: dict) -> None:
     path = pending_path(event)
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as f:
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        os.chmod(os.path.dirname(os.path.dirname(path)), 0o700)
+        _prune_pending(os.path.dirname(path))
+        with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
             json.dump(data, f)
     except OSError:
         pass
+
+
+def _prune_pending(folder: str, max_age: float = 86400) -> None:
+    """Snapshots for tool calls the user declined never get a PostToolUse; drop them after a day."""
+    import time
+    cutoff = time.time() - max_age
+    for name in os.listdir(folder):
+        p = os.path.join(folder, name)
+        try:
+            if os.path.getmtime(p) < cutoff:
+                os.unlink(p)
+        except OSError:
+            pass
 
 
 def take_pending(event: dict) -> dict | None:
@@ -67,6 +82,11 @@ def undo_plan_reason(command: str) -> str:
         return "tux: undo (no matching change found)"
     plan = j.plan(entry, journal.read_local, force="--force" in command)
     return "tux: " + plan.render()[:1500]
+
+
+def _interval(command: str) -> str:
+    m = re.search(r"--every\s+(\S+)", command)
+    return m.group(1) if m else "6h"
 
 
 def pre_tool_use(event: dict, tool: str, args: dict) -> None:
@@ -97,6 +117,12 @@ def pre_tool_use(event: dict, tool: str, args: dict) -> None:
             decide("allow", "tux: read-only inspection")
         elif re.match(r"^\s*(\S*/)?tux-undo\b", command):
             decide("ask", undo_plan_reason(command))
+        elif re.match(r"^\s*(\S*/)?tux-monitor\s+enable\b", command):
+            save_pending(event, {"command": command, "before": journal.probe(command)})
+            decide("ask", "tux: turn ON background monitoring? This installs a systemd user timer "
+                          "(~/.config/systemd/user/tux-monitor.timer) that runs a local health check every "
+                          f"{_interval(command)} and shows a desktop notification when something new goes wrong. "
+                          "No AI, no network. Turn it off any time with `tux-monitor disable`.")
         else:
             if not SELF_JOURNALED.match(command):
                 save_pending(event, {"command": command, "before": journal.probe(command)})

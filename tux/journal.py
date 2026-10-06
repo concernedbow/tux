@@ -78,9 +78,14 @@ class Journal:
         self.file = self.root / "journal.jsonl"
         self.backups = self.root / "backups"
 
+    def _ensure_private_dir(self, path: Path) -> None:
+        # backups can hold copies of root-only files (e.g. Wi-Fi passwords), so keep them owner-only
+        path.mkdir(parents=True, exist_ok=True)
+        path.chmod(0o700)
+
     @contextlib.contextmanager
     def _locked(self):
-        self.root.mkdir(parents=True, exist_ok=True)
+        self._ensure_private_dir(self.root)
         with open(self.root / "journal.lock", "w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             try:
@@ -98,7 +103,9 @@ class Journal:
 
     def _write_all(self, entries: list[Entry]) -> None:
         tmp = self.file.with_suffix(".tmp")
-        tmp.write_text("".join(json.dumps(asdict(e)) + "\n" for e in entries))
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write("".join(json.dumps(asdict(e)) + "\n" for e in entries))
         os.replace(tmp, self.file)
 
     def get(self, entry_id: int) -> Entry | None:
@@ -132,9 +139,11 @@ class Journal:
             before_hash=_sha(before) if before is not None else None,
             after_hash=_sha(after) if after is not None else None, undoes=undoes))
         if before is not None:
-            self.backups.mkdir(parents=True, exist_ok=True)
+            self._ensure_private_dir(self.backups)
             name = f"{entry.id:05d}-{Path(path).name}"
-            (self.backups / name).write_bytes(before)
+            fd = os.open(self.backups / name, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "wb") as f:
+                f.write(before)
             self._update(entry.id, backup=name)
             entry.backup = name
         return entry
@@ -366,9 +375,11 @@ def write_with_root(path: str, content: bytes | None, runner: Runner, scratch: P
         pass
     if content is None:
         return runner(f"sudo rm -f {shlex.quote(path)}")
-    scratch.mkdir(parents=True, exist_ok=True)
+    scratch.mkdir(parents=True, exist_ok=True, mode=0o700)
     tmp = scratch / "restore.tmp"
-    tmp.write_bytes(content)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(content)
     try:
         return runner(f"sudo tee {shlex.quote(path)} < {shlex.quote(str(tmp))} > /dev/null")
     finally:
@@ -394,7 +405,7 @@ REGENERATE = {"update-grub", "update-grub2", "grub-mkconfig", "grub2-mkconfig", 
 
 @dataclass
 class Action:
-    kind: str                     # pkg | svc | hold | noop | regen | unknown
+    kind: str                     # pkg | svc | hold | monitor | noop | regen | unknown
     raw: str
     root: bool = False
     manager: str = ""
@@ -480,6 +491,8 @@ def parse(segment: str) -> Action:
             a.kind, a.verb, a.items = "svc", pos[0], pos[1:]
     elif name in REGENERATE:
         a.kind = "regen"
+    elif name == "tux-monitor" and args and args[0] in ("enable", "disable"):
+        a.kind, a.verb, a.items = "monitor", args[0], ["tux-monitor.timer"]
     elif name in ("tux-backup", "tux-note", "tux-undo"):
         a.kind = "noop"    # journaled separately / harmless
     return a
@@ -506,8 +519,8 @@ def probes(command: str) -> dict[str, str]:
                 out[f"pkg:{a.manager}:{item}"] = _pkg_query(a.manager, item)
             elif a.kind == "hold":
                 out[f"hold:{item}"] = f"apt-mark showhold | grep -qx {shlex.quote(item)}"
-            elif a.kind == "svc":
-                scope = "--user " if a.user else ""
+            elif a.kind == "svc" or a.kind == "monitor":
+                scope = "--user " if a.user or a.kind == "monitor" else ""
                 q = shlex.quote(item)
                 out[f"svc-enabled:{scope}{item}"] = f"systemctl {scope}is-enabled {q} 2>/dev/null; true"
                 out[f"svc-active:{scope}{item}"] = f"systemctl {scope}is-active {q} 2>/dev/null; true"
@@ -576,6 +589,11 @@ def invert(command: str, before: dict, after: dict) -> tuple[list[str], list[str
                 changed = [i for i in a.items if before.get(f"hold:{i}") and not after.get(f"hold:{i}")]
             if changed:
                 inverse.append(sudo + f"apt-mark {'unhold' if a.verb == 'hold' else 'hold'} " + " ".join(changed))
+        elif a.kind == "monitor":
+            was, now = (before.get("svc-enabled:--user tux-monitor.timer"),
+                        after.get("svc-enabled:--user tux-monitor.timer"))
+            if was != now and "enabled" in (was, now):
+                inverse.append("tux-monitor disable" if now == "enabled" else "tux-monitor enable")
         elif a.kind == "svc":
             scope = "--user " if a.user else ""
             sudo = "" if a.user else sudo

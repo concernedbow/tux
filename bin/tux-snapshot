@@ -8,3 +8,9 @@ from tux.notes import NOTES_FILE, load_notes
 print(sysinfo.snapshot())
 notes = load_notes()
 print(f"\nNotes from previous sessions ({NOTES_FILE}):\n{notes}" if notes else "\nNo notes from previous sessions yet.")
+
+from tux import monitor
+findings = monitor.active_findings()
+if findings:
+    print(f"\nBackground monitor findings (last check {monitor.load_state().last_check}):\n"
+          + monitor.format_findings(findings))

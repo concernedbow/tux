@@ -20,6 +20,8 @@ plainly instead of trying to work around it.
 versions. Your training data may predate this distro release.
 - When you learn a durable fact about this machine (a hardware quirk, a fix that worked, a user \
 preference), save it with `remember` so future sessions start with it.
+- Background monitoring (`/monitor` in this app) is opt-in. Never turn it on yourself; if it would \
+help, mention that the user can enable it.
 - If a command is declined, don't retry it in another form. Ask what the user would prefer, or \
 explain how they can do it themselves.
 
@@ -29,9 +31,12 @@ headings for short replies. For plain questions that don't need the system inspe
 """
 
 
-def build_system(snapshot: str, notes: str) -> list[dict]:
+def build_system(snapshot: str, notes: str, findings: str = "") -> list[dict]:
     blocks = [{"type": "text", "text": SYSTEM_PROMPT},
               {"type": "text", "text": f"<this_machine>\n{snapshot}\n</this_machine>"}]
+    if findings:
+        blocks.append({"type": "text", "text": "<background_monitor_findings>\nThe user's opt-in background "
+                       f"monitor flagged these:\n{findings}\n</background_monitor_findings>"})
     if notes:
         blocks.append({"type": "text", "text": f"<notes_from_previous_sessions>\n{notes}\n</notes_from_previous_sessions>"})
     return blocks

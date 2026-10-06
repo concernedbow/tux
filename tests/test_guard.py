@@ -7,8 +7,11 @@ GUARD = Path(__file__).resolve().parent.parent / "scripts" / "guard.py"
 
 
 def run(event: dict) -> dict | None:
-    out = subprocess.run([sys.executable, str(GUARD)], input=json.dumps(event), capture_output=True, text=True,
-                         check=True).stdout.strip()
+    import tempfile
+    with tempfile.TemporaryDirectory() as state:   # never touch the real ~/.local/state
+        out = subprocess.run([sys.executable, str(GUARD)], input=json.dumps(event), capture_output=True,
+                             text=True, check=True,
+                             env={"XDG_STATE_HOME": state, "PATH": "/usr/bin:/bin"}).stdout.strip()
     return json.loads(out)["hookSpecificOutput"] if out else None
 
 
@@ -134,3 +137,18 @@ def test_bash_change_records_probed_state(tmp_path):
     assert not (state / "tux" / "pending" / "toolu_3.json").exists()
     entry = json.loads((state / "tux" / "journal.jsonl").read_text().splitlines()[-1])
     assert entry["command"] == cmd and entry["inverse"] == []   # nothing actually changed
+
+
+def test_stale_pending_snapshots_are_pruned(tmp_path):
+    import os
+    import time
+    pending = tmp_path / "state" / "tux" / "pending"
+    pending.mkdir(parents=True)
+    stale, fresh = pending / "declined.json", pending / "recent.json"
+    stale.write_text("{}")
+    fresh.write_text("{}")
+    old = time.time() - 2 * 86400
+    os.utime(stale, (old, old))
+    hook({"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_use_id": "new",
+          "tool_input": {"command": "tux-sudo apt install -y zenity"}}, tmp_path / "state")
+    assert not stale.exists() and fresh.exists() and (pending / "new.json").exists()

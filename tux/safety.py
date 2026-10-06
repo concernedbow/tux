@@ -153,6 +153,8 @@ READ_ONLY_COMMANDS: dict[str, object] = {
     # tux's own helpers (tux-note only appends to tux's notes file)
     "tux-scan": None, "tux-snapshot": None, "tux-note": None, "tux-backup": None,
     "tux-undo": lambda a: bool(a) and a[0] in ("list", "show", "-h", "--help"),
+    # enable/disable install or remove a systemd timer, so they need approval
+    "tux-monitor": lambda a: not a or a[0] in ("status", "report", "check", "help", "-h", "--help"),
 }
 
 SHELL_SPLIT = re.compile(r"\|\||&&|;|\||&")

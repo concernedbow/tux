@@ -1,0 +1,46 @@
+# Privacy
+
+tux is an open-source tool that runs on your own computer. **The tux project has no servers and collects
+nothing**: no telemetry, no analytics, no accounts. This page explains what data leaves your machine
+when you use tux, where it goes, and what tux stores locally.
+
+## What is sent, and where
+
+tux works by letting Claude inspect your system. Whatever tux reads to diagnose a problem becomes part
+of the conversation with Claude and is sent to **Anthropic**: your messages, command output (for example
+`lspci`, `journalctl`, `df`), excerpts of config files and logs, and file contents it reads or edits.
+
+| How you run tux | Where that data goes | Governed by |
+|---|---|---|
+| Claude Code plugin (`claude --agent tux:tux`, `/tux:…`) | Anthropic, through Claude Code, under your Claude account | Your Claude plan's terms and [Anthropic's Privacy Policy](https://www.anthropic.com/legal/privacy) |
+| `tux --api` (terminal app with an API key) | Anthropic's API, using your API key | [Anthropic's Commercial Terms](https://www.anthropic.com/legal/commercial-terms) and [Privacy Policy](https://www.anthropic.com/legal/privacy) |
+| Web search (API mode, unless `--no-web`) | Search queries Claude writes, run by Anthropic's web search tool | Same as above |
+| Background monitor (`tux-monitor`) | **Nowhere.** Checks run locally, and notifications are local desktop notifications | n/a |
+
+tux itself never sends data anywhere else.
+
+## What tux won't read
+
+tux refuses to read files that typically hold secrets: SSH private keys, GnuPG keyrings,
+`/etc/shadow`, password stores and keyrings, browser saved logins and cookies, cloud credentials, and
+`.env` files. Command output can still contain personal details such as your username, hostname, device
+serial numbers, Wi-Fi network names and IP addresses. Don't use tux on a machine where sharing that with
+Anthropic isn't acceptable.
+
+## What tux stores on your computer
+
+All of this stays local and is readable only by your user account:
+
+| Path | Contents |
+|---|---|
+| `~/.config/tux/notes.md` | Facts tux saved about your machine (hardware quirks, past fixes) |
+| `~/.local/state/tux/journal.jsonl` and `backups/` | The change journal and copies of files from before tux edited them, used by undo. These copies can include sensitive configuration. |
+| `~/.local/state/tux/monitor/` | Background monitor state and history (only if you turned monitoring on) |
+| `~/.config/systemd/user/tux-monitor.*`, `~/.local/share/tux/monitor/` | The monitor's timer and program files (only while monitoring is on) |
+
+To delete everything: run `tux-monitor disable --purge`, then
+`rm -rf ~/.config/tux ~/.local/state/tux ~/.local/share/tux`.
+
+## Contact
+
+Questions or concerns: [open an issue](https://github.com/concernedbow/tux/issues).

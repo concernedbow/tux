@@ -7,7 +7,7 @@ from typing import Any, Protocol
 
 import anthropic
 
-from . import notes, prompts, sysinfo, tools
+from . import monitor, notes, prompts, sysinfo, tools
 
 DEFAULT_MODEL = "claude-opus-5-5"
 MAX_TOOL_ROUNDS = 40
@@ -37,7 +37,9 @@ class Agent:
     messages: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        self.system = prompts.build_system(sysinfo.snapshot(), notes.load_notes())
+        findings = monitor.active_findings()
+        self.system = prompts.build_system(sysinfo.snapshot(), notes.load_notes(),
+                                           monitor.format_findings(findings) if findings else "")
         self.tool_defs = tools.TOOL_DEFS + ([tools.WEB_SEARCH_TOOL] if self.web else [])
 
     def reset(self) -> None:

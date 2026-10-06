@@ -1,3 +1,5 @@
+<img src="assets/icon.png" alt="" width="96" align="right">
+
 # tux 🐧
 
 **An AI troubleshooting agent for your Linux machine.** Describe a problem in plain English ("my
@@ -32,6 +34,8 @@ PipeWire falls back to the low-quality HSP profile after each reconnect. Two fix
   restarts services, then checks that the fix worked.
 - **Undoes its own changes**: every config edit, package install or removal, and service change is
   recorded, and `/tux:undo` (or just "undo that") reverses it. See [Undo](#undo).
+- **Watches your machine, if you want it to** (opt-in): background health checks with a desktop
+  notification when something new goes wrong. See [Background monitoring](#background-monitoring-opt-in).
 - **Remembers your machine**: hardware quirks and past fixes are saved to `~/.config/tux/notes.md`, so the
   next session starts with them.
 
@@ -57,17 +61,18 @@ claude --agent tux:tux "why is my fan so loud?"  # start with a question
 ```
 
 Inside any Claude Code session you can also run `/tux:doctor` for a full health check, `/tux:undo` to
-revert a change, or just ask: *"use tux to figure out why my wifi keeps dropping"*.
+revert a change, `/tux:monitor` for background monitoring, or just ask: *"use tux to figure out why my wifi keeps dropping"*.
 
 Optionally, add a shortcut to your shell profile: `alias tux='claude --agent tux:tux'`
 
 ### Option B: the `tux` command
 
 ```bash
-pipx install git+https://github.com/concernedbow/tux
+pipx install git+https://github.com/concernedbow/tux@v0.1.0
 tux                   # interactive
 tux doctor            # full health check
 /undo, /changes       # inside the app: revert a change, list what tux changed
+tux monitor on        # opt-in background monitoring (see below)
 tux "is my SSD healthy?"
 tux --read-only ...   # diagnose only, never change anything
 ```
@@ -98,8 +103,21 @@ Other safeguards:
   before you allow it. On a headless machine, tux asks you to run root commands yourself with `! sudo …`.
 - **Scoped**: the plugin's permission hook applies only in tux sessions. Your other Claude Code sessions behave as before.
 
-**Privacy:** command output and log excerpts are sent to Claude to be analysed. Don't use tux on
-machines where that isn't acceptable.
+## Data and privacy
+
+The tux project has **no servers and collects nothing**: no telemetry, no analytics. To diagnose
+problems, tux sends what it reads (your messages, command output, log excerpts, and contents of
+files it reads or edits) to **Anthropic**:
+
+- **Claude Code plugin:** through Claude Code, under your Claude account and plan terms.
+- **`tux --api`:** directly to Anthropic's API with your key. Web search queries go through Anthropic's
+  search tool unless you pass `--no-web`.
+- **Background monitor:** sends nothing anywhere. It's entirely local.
+
+tux never reads SSH keys, keyrings, password stores, browser logins or `.env` files. Command output can
+still include details like your hostname, serial numbers and network names. Everything tux stores
+(notes, the undo journal and backups, monitor history) stays on your machine, readable only by your
+account. Full details, including how to delete it all: [PRIVACY.md](PRIVACY.md).
 
 ## Undo
 
@@ -129,15 +147,36 @@ tux-undo show 3      # what undoing #3 would do (changes nothing)
 tux-undo 3           # undo it (you approve it in the permission prompt)
 ```
 
+## Background monitoring (opt-in)
+
+Background monitoring is **off by default**, and tux never turns it on for you. Turn it on with
+`/tux:monitor on` in Claude Code, or `tux monitor on` / `tux-monitor enable`:
+
+```bash
+tux-monitor enable --every 6h   # 1h, 6h (default), 12h or 1d
+tux-monitor status              # on/off, last check, active findings
+tux-monitor report              # findings plus recent history
+tux-monitor disable             # removes everything it installed (--purge also deletes history)
+```
+
+It installs a systemd user timer that runs a quick local check: disk space and inodes, failed services,
+drive health (SMART via udisks, no root needed), new kernel storage and hardware errors, OOM kills, GPU
+hangs, overheating, and battery wear. The checks are plain local commands, with **no AI, no network and no
+usage**.
+
+You get a desktop notification only when something **new** goes wrong. An ongoing problem is reported
+once, and resolutions are logged. Active findings show up at the start of your next tux session, so
+you can just ask about them. Turning it on or off is recorded in the undo journal like any other change.
+
 ## How it works
 
 ```
 .claude-plugin/     plugin + marketplace manifests
 agents/tux.md       the troubleshooting agent (Claude Code mode)
-skills/             /tux:doctor health check, /tux:undo
+skills/             /tux:doctor health check, /tux:undo, /tux:monitor
 hooks/hooks.json    → scripts/guard.py: allow / ask / deny each command, journal changes
-bin/                tux-scan, tux-snapshot, tux-note, tux-backup, tux-undo, tux-sudo (on the agent's PATH)
-tux/                Python package: safety classifier, diagnostics, change journal + undo,
+bin/                tux-scan, tux-snapshot, tux-note, tux-backup, tux-undo, tux-monitor, tux-sudo
+tux/                Python package: safety classifier, diagnostics, change journal + undo, monitor,
                     API-mode agent + terminal app
 ```
 
