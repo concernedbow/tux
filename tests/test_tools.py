@@ -1,6 +1,7 @@
 import pytest
 
-from tux import journal, notes, sysinfo, tools
+from tux import journal, notes, sysinfo
+from tux_app import tools
 from tux.safety import Verdict
 
 

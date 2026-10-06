@@ -15,9 +15,11 @@ from rich.prompt import Prompt
 from rich.syntax import Syntax
 from rich.text import Text
 
-from . import __version__, journal, monitor, notes, prompts, sysinfo, tools
+from tux import __version__, journal, monitor, notes, sysinfo
+from tux.safety import Verdict
+
+from . import prompts, tools
 from .agent import DEFAULT_MODEL, Agent
-from .safety import Verdict
 
 console = Console()
 
@@ -309,7 +311,9 @@ def run_claude_code(args: argparse.Namespace, question: str) -> None:
                       f"  claude plugin install {PLUGIN_ID}")
         sys.exit(1)
     if args.read_only:
-        # dontAsk denies anything the tux hook doesn't pre-approve, i.e. every change
+        # dontAsk denies anything not pre-approved; the user asked for read-only, so let the hook
+        # pre-approve inspection commands for this session (changes are still denied)
+        os.environ["TUX_AUTO_APPROVE_READ_ONLY"] = "1"
         cmd += ["--permission-mode", "dontAsk", "--append-system-prompt", READ_ONLY_NOTE]
     if args.model != DEFAULT_MODEL:
         cmd += ["--model", args.model]

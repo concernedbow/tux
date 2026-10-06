@@ -5,7 +5,7 @@
   "plugins": [
     {
       "name": "tux",
-      "source": "./",
+      "source": "./plugin",
       "description": "Diagnose and fix Linux hardware and software problems with Claude.",
       "category": "system"
     }

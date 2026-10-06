@@ -20,7 +20,7 @@ classifiers = [
 dev = ["pytest>=8"]
 
 [project.scripts]
-tux = "tux.cli:main"
+tux = "tux_app.cli:main"
 tux-monitor = "tux.monitor:main"
 
 [project.urls]
@@ -29,5 +29,8 @@ Homepage = "https://github.com/concernedbow/tux"
 [tool.setuptools.dynamic]
 version = { attr = "tux.__version__" }
 
-[tool.setuptools.packages.find]
-include = ["tux*"]
+# The Claude Code plugin lives in plugin/ and ships only what it runs (the `tux` core: safety
+# classifier, diagnostics, journal, monitor). The API-key terminal app is a separate package.
+[tool.setuptools]
+package-dir = { "tux" = "plugin/tux", "tux_app" = "app/tux_app" }
+packages = ["tux", "tux_app"]

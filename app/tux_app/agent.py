@@ -7,7 +7,9 @@ from typing import Any, Protocol
 
 import anthropic
 
-from . import monitor, notes, prompts, sysinfo, tools
+from tux import monitor, notes, sysinfo
+
+from . import prompts, tools
 
 DEFAULT_MODEL = "claude-opus-5-5"
 MAX_TOOL_ROUNDS = 40

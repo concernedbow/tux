@@ -6,8 +6,8 @@ import anthropic
 import httpx2 as httpx
 import pytest
 
-from tux import agent as agent_mod
-from tux import tools
+from tux_app import agent as agent_mod
+from tux_app import tools
 from tests.test_tools import FakeApprover, isolated_state  # noqa: F401  (fixture)
 
 

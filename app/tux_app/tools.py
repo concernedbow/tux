@@ -12,8 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Protocol
 
-from . import journal, notes, sysinfo
-from .safety import Risk, Verdict, classify, is_sensitive_path
+from tux import journal, notes, sysinfo
+from tux.safety import Risk, Verdict, classify, is_sensitive_path
 
 MAX_OUTPUT_CHARS = 30_000
 

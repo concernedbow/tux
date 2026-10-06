@@ -1,4 +1,4 @@
-<img src="assets/icon.png" alt="" width="96" align="right">
+<img src="plugin/assets/icon.png" alt="" width="96" align="right">
 
 # tux 🐧
 
@@ -65,10 +65,15 @@ revert a change, `/tux:monitor` for background monitoring, or just ask: *"use tu
 
 Optionally, add a shortcut to your shell profile: `alias tux='claude --agent tux:tux'`
 
+**Fewer prompts:** by default, Claude Code asks before each new kind of command, read-only ones included
+(you can choose "don't ask again"). To let tux run commands that only *read* system state without
+asking, turn on the plugin's **Auto-approve read-only commands** setting (`/config`, or
+`claude plugin configure tux@tux`). Commands that change anything always ask.
+
 ### Option B: the `tux` command
 
 ```bash
-pipx install git+https://github.com/concernedbow/tux@v0.1.0
+pipx install git+https://github.com/concernedbow/tux@v0.1.1
 tux                   # interactive
 tux doctor            # full health check
 /undo, /changes       # inside the app: revert a change, list what tux changed
@@ -88,13 +93,13 @@ tux runs commands on your real machine, so every command is classified before it
 
 | Kind | Examples | What happens |
 |---|---|---|
-| **Read-only** | `lspci`, `journalctl`, `systemctl status`, `ip addr`, `smartctl -H`, `dpkg -l` | Runs immediately |
+| **Read-only** | `lspci`, `journalctl`, `systemctl status`, `ip addr`, `smartctl -H`, `dpkg -l` | Runs immediately if you turned on auto-approve; otherwise Claude Code asks as usual |
 | **Change** | `apt install`, `systemctl restart`, editing `/etc/...`, anything with `sudo` | Shown to you first; runs only if you approve |
 | **Blocked** | `rm -rf /`, `mkfs`, `dd of=/dev/sda`, `curl … \| sh`, removing the kernel or `sudo` | Never runs |
 
-The classifier ([`tux/safety.py`](tux/safety.py)) is conservative. A command counts as read-only only if
+The classifier ([`plugin/tux/safety.py`](plugin/tux/safety.py)) is conservative. A command counts as read-only only if
 every part of the pipeline is on an allowlist with safe arguments. Anything unrecognised needs your
-approval. Output redirection, `$(...)`, `sed -i`, and `find -delete` all count as changes.
+approval. Output redirection, `$(...)`, `sed -i`, `find -delete`, and network requests all count as changes.
 
 Other safeguards:
 - **Secrets stay private**: tux refuses to read SSH keys, password stores, browser credentials, or `.env` files.
@@ -171,17 +176,20 @@ you can just ask about them. Turning it on or off is recorded in the undo journa
 ## How it works
 
 ```
-.claude-plugin/     plugin + marketplace manifests
-agents/tux.md       the troubleshooting agent (Claude Code mode)
-skills/             /tux:doctor health check, /tux:undo, /tux:monitor
-hooks/hooks.json    → scripts/guard.py: allow / ask / deny each command, journal changes
-bin/                tux-scan, tux-snapshot, tux-note, tux-backup, tux-undo, tux-monitor, tux-sudo
-tux/                Python package: safety classifier, diagnostics, change journal + undo, monitor,
-                    API-mode agent + terminal app
+.claude-plugin/marketplace.json   marketplace listing → ./plugin
+plugin/                           the Claude Code plugin; ships only what it runs
+  .claude-plugin/plugin.json      manifest (settings, icon, listing links)
+  agents/tux.md                   the troubleshooting agent
+  skills/                         /tux:doctor, /tux:undo, /tux:monitor
+  hooks/hooks.json                → scripts/guard.py: ask / deny for each command, journal changes
+  bin/                            tux-scan, tux-snapshot, tux-note, tux-backup, tux-undo, tux-monitor, tux-sudo
+  tux/                            core: safety classifier, diagnostics, change journal, monitor
+app/tux_app/                      standalone terminal app on the Claude API (`tux --api`)
+tests/                            pytest suite (not shipped in the plugin)
 ```
 
-Both modes share the same safety classifier and diagnostics. In API mode, tux runs its own agent loop
-on the Claude API with tools for commands, diagnostics, log search, file edits, web search, and notes.
+Both modes share the same core (`plugin/tux`). In API mode, tux runs its own agent loop on the Claude API
+with tools for commands, diagnostics, log search, file edits, web search, notes, and undo.
 
 ## Development
 
@@ -189,11 +197,11 @@ on the Claude API with tools for commands, diagnostics, log search, file edits, 
 git clone https://github.com/concernedbow/tux && cd tux
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 .venv/bin/pytest
-claude --plugin-dir . --agent tux:tux   # try local plugin changes
+claude --plugin-dir ./plugin --agent tux:tux   # try local plugin changes
 ```
 
-Contributions welcome, especially new diagnostic areas in `tux/sysinfo.py` and read-only commands in
-`tux/safety.py` (each new one needs a test).
+Contributions welcome, especially new diagnostic areas in `plugin/tux/sysinfo.py` and read-only
+commands in `plugin/tux/safety.py` (each new one needs a test).
 
 ## License
 

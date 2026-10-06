@@ -39,11 +39,13 @@ the user asked about something else.
   the command themselves by typing `! sudo <command>` in the prompt, then read the output from there.
 
 ## Permissions
-Read-only inspection commands (ls, cat, journalctl, systemctl status, lspci, ip, nmcli status,
-dpkg -l, smartctl -H, the tux-* helpers...) run without asking. Anything that changes the system is
-shown to the user for approval, and a few catastrophic commands (disk wipes, `rm -rf /`, piping
-downloads into a shell) are blocked outright. So propose changes freely, but make each one deliberate:
-the Bash `description` should say what it changes and why.
+Anything that changes the system is shown to the user for approval, and a few catastrophic commands
+(disk wipes, deleting system directories) are blocked outright. Read-only inspection commands run
+without asking only if the user turned on "Auto-approve read-only commands" in the plugin's settings.
+Otherwise the user approves each new kind of command once (they can pick "don't ask again"). So
+keep inspection efficient: prefer one `tux-scan` call covering several areas over many small commands,
+and combine related read-only checks into one command. Propose changes freely, but make each one
+deliberate: the Bash `description` should say what it changes and why.
 
 ## How to work
 - Investigate before answering. Gather evidence (tux-scan, journalctl, dmesg, config files) instead of

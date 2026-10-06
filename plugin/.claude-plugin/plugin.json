@@ -1,7 +1,7 @@
 {
   "name": "tux",
   "displayName": "tux: Linux troubleshooter",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A Linux troubleshooting agent: diagnoses hardware and software problems on your machine, explains what it finds, and applies fixes with your approval.",
   "author": {
     "name": "Sahil Lukose",
@@ -20,5 +20,13 @@
   "icon": "./assets/icon.png",
   "documentationUrl": "https://github.com/concernedbow/tux#readme",
   "supportUrl": "https://github.com/concernedbow/tux/issues",
-  "privacyPolicyUrl": "https://github.com/concernedbow/tux/blob/main/PRIVACY.md"
+  "privacyPolicyUrl": "https://github.com/concernedbow/tux/blob/main/PRIVACY.md",
+  "userConfig": {
+    "auto_approve_read_only": {
+      "type": "boolean",
+      "title": "Auto-approve read-only commands",
+      "description": "In tux sessions, run commands that only inspect the system (lspci, journalctl, df, systemctl status, tux-scan\u2026) without asking. Commands that change anything always ask. Off by default.",
+      "default": false
+    }
+  }
 }

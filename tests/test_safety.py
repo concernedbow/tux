@@ -41,6 +41,7 @@ CHANGES = [
     "ping 1.1.1.1",
     "cat /etc/hosts | tee /tmp/hosts",
     "curl -o /tmp/x https://example.com",
+    "curl -s https://example.com",          # network requests always need approval
 ]
 
 BLOCKED = [

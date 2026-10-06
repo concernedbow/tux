@@ -11,7 +11,7 @@ import pytest
 from tux import journal, monitor
 from tux.safety import Risk, classify
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent / "plugin"
 
 
 @pytest.fixture(autouse=True)
@@ -290,7 +290,7 @@ def test_enable_permission_prompt_explains_what_it_installs(tmp_path):
 
 
 def test_cli_enable_requires_explicit_yes(monkeypatch):
-    from tux import cli
+    from tux_app import cli
     calls = []
     monkeypatch.setattr(monitor, "enable", lambda every: calls.append(every) or "on")
     monkeypatch.setattr(journal, "probe", lambda cmd: {})    # don't query the real systemd

@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Claude Code hook for tux sessions.
 
-PreToolUse (Bash): read-only commands run without a prompt, system changes always ask (even if the
-user has broad allow rules), and catastrophic commands are denied outright. Before a change runs, the
+PreToolUse (Bash): system changes always ask (even if the user has broad allow rules) and catastrophic
+commands are denied outright. Read-only commands are approved automatically only if the user turned on
+the plugin's "Auto-approve read-only commands" option (off by default); otherwise they go through
+Claude Code's normal permission prompt. Before a change runs, the
 state it could affect (packages, services, holds) is captured so it can be undone.
 PreToolUse (Read): files that hold secrets are denied.
 PreToolUse (Write/Edit): the file's current content is captured so the edit can be undone.
@@ -25,6 +27,12 @@ from tux.safety import Risk, classify, is_sensitive_path  # noqa: E402
 
 # tux's own helpers journal themselves (or change nothing worth recording)
 SELF_JOURNALED = re.compile(r"^\s*(\S*/)?tux-(undo|backup|note|scan|snapshot)\b")
+
+
+def auto_approve_read_only() -> bool:
+    """The user's opt-in plugin setting (exported by Claude Code), or `tux --read-only`'s launcher flag."""
+    value = os.environ.get("CLAUDE_PLUGIN_OPTION_AUTO_APPROVE_READ_ONLY") or os.environ.get("TUX_AUTO_APPROVE_READ_ONLY", "")
+    return value.strip().lower() in ("true", "1", "yes", "on")
 
 
 def decide(decision: str, reason: str) -> None:
@@ -114,7 +122,9 @@ def pre_tool_use(event: dict, tool: str, args: dict) -> None:
             decide("deny", f"Blocked by tux safety policy: {verdict.reason}. Don't retry variants; if it's "
                            "truly needed, explain to the user exactly what to run themselves and why.")
         elif verdict.risk is Risk.READ_ONLY:
-            decide("allow", "tux: read-only inspection")
+            if auto_approve_read_only():
+                decide("allow", "tux: read-only inspection (auto-approved by your plugin setting)")
+            # otherwise: no decision, so Claude Code's normal permission flow applies
         elif re.match(r"^\s*(\S*/)?tux-undo\b", command):
             decide("ask", undo_plan_reason(command))
         elif re.match(r"^\s*(\S*/)?tux-monitor\s+enable\b", command):

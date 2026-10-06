@@ -129,8 +129,6 @@ READ_ONLY_COMMANDS: dict[str, object] = {
     "iw": lambda a: not any(x in a for x in ("set", "connect", "disconnect", "del", "add", "scan")),
     "iwconfig": lambda a: len(a) <= 1, "rfkill": _first_arg_in("list"), "ethtool": lambda a: len(a) <= 2 and not any(
         x in a for x in ("-s", "-K", "-G", "-A", "-C", "-E", "-r")),
-    "curl": lambda a: all(not x.startswith(("-o", "--output", "-O", "-T", "--upload", "-d", "--data", "-X", "-F"))
-                          for x in a),
     "bluetoothctl": _first_arg_in("show", "list", "devices", "info", "paired-devices", "version"),
     "hciconfig": lambda a: len(a) <= 1,
     # packages

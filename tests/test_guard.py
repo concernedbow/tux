@@ -3,29 +3,48 @@ import subprocess
 import sys
 from pathlib import Path
 
-GUARD = Path(__file__).resolve().parent.parent / "scripts" / "guard.py"
+GUARD = Path(__file__).resolve().parent.parent / "plugin" / "scripts" / "guard.py"
 
 
-def run(event: dict) -> dict | None:
+AUTO_APPROVE = {"CLAUDE_PLUGIN_OPTION_AUTO_APPROVE_READ_ONLY": "true"}
+
+
+def run(event: dict, env: dict | None = None) -> dict | None:
     import tempfile
     with tempfile.TemporaryDirectory() as state:   # never touch the real ~/.local/state
         out = subprocess.run([sys.executable, str(GUARD)], input=json.dumps(event), capture_output=True,
                              text=True, check=True,
-                             env={"XDG_STATE_HOME": state, "PATH": "/usr/bin:/bin"}).stdout.strip()
+                             env={"XDG_STATE_HOME": state, "PATH": "/usr/bin:/bin", **(env or {})}).stdout.strip()
     return json.loads(out)["hookSpecificOutput"] if out else None
 
 
-def bash(cmd: str, agent: str | None = "tux:tux") -> dict | None:
+def bash(cmd: str, agent: str | None = "tux:tux", env: dict | None = None) -> dict | None:
     event = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": cmd}}
     if agent:
         event["agent_type"] = agent
-    return run(event)
+    return run(event, env)
 
 
 def test_decisions_in_tux_session():
-    assert bash("tux-scan audio network")["permissionDecision"] == "allow"
     assert bash("tux-sudo systemctl restart bluetooth")["permissionDecision"] == "ask"
     assert bash("sudo dd if=/dev/zero of=/dev/sda")["permissionDecision"] == "deny"
+
+
+def test_read_only_needs_the_opt_in_setting():
+    # default: the hook makes no decision, so Claude Code's normal permission prompt applies
+    assert bash("tux-scan audio network") is None
+    assert bash("tux-scan audio", env={"CLAUDE_PLUGIN_OPTION_AUTO_APPROVE_READ_ONLY": "false"}) is None
+    # opted in: approved without a prompt
+    assert bash("tux-scan audio network", env=AUTO_APPROVE)["permissionDecision"] == "allow"
+    # the setting never extends to changes or blocked commands
+    assert bash("tux-sudo apt install -y zenity", env=AUTO_APPROVE)["permissionDecision"] == "ask"
+    assert bash("sudo rm -rf /", env=AUTO_APPROVE)["permissionDecision"] == "deny"
+
+
+def test_plugin_declares_the_setting_off_by_default():
+    manifest = json.loads((GUARD.parent.parent / ".claude-plugin" / "plugin.json").read_text())
+    option = manifest["userConfig"]["auto_approve_read_only"]
+    assert option["type"] == "boolean" and option["default"] is False
 
 
 def test_silent_outside_tux():
@@ -53,10 +72,10 @@ def test_changes_are_journaled(tmp_path):
 BIN = GUARD.parent.parent / "bin"
 
 
-def hook(event: dict, state) -> dict | None:
+def hook(event: dict, state, env: dict | None = None) -> dict | None:
     out = subprocess.run([sys.executable, str(GUARD)], input=json.dumps({"agent_type": "tux:tux", **event}),
                          capture_output=True, text=True, check=True,
-                         env={"XDG_STATE_HOME": str(state), "PATH": "/usr/bin:/bin"}).stdout.strip()
+                         env={"XDG_STATE_HOME": str(state), "PATH": "/usr/bin:/bin", **(env or {})}).stdout.strip()
     return json.loads(out)["hookSpecificOutput"] if out else None
 
 
@@ -113,10 +132,10 @@ def test_undo_permission_prompt_shows_the_plan(tmp_path):
                      "tool_input": {"command": "tux-undo 1"}}, state)
     assert decision["permissionDecision"] == "ask"
     assert "Restore" in decision["permissionDecisionReason"] and "+a" in decision["permissionDecisionReason"]
-    # list/show are read-only and run without asking
+    # list/show are read-only: auto-approved when the user opted in
     for cmd in ("tux-undo list", "tux-undo show 1", "tux-backup /etc/hosts"):
         d = hook({"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_use_id": "t",
-                  "tool_input": {"command": cmd}}, state)
+                  "tool_input": {"command": cmd}}, state, AUTO_APPROVE)
         assert d["permissionDecision"] == "allow", cmd
 
 
