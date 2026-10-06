@@ -98,3 +98,125 @@ def test_key_storage(tmp_path, monkeypatch):
     assert gemini.load_key() == "fromenv"
     monkeypatch.delenv("GEMINI_API_KEY")
     assert gemini.forget_key() and gemini.load_key() is None
+
+
+def test_thought_parts_stream_to_view_and_are_not_kept():
+    requests: list[dict] = []
+    events = []
+    agent, view = make_agent([sse([chunk([{"text": "hmm", "thought": True}]),
+                                   chunk([{"text": "Answer."}], "STOP")])], requests)
+    view.thinking_started = lambda: events.append("start")
+    view.thinking_delta = lambda t: events.append(t)
+    agent.ask("hi")
+    assert events == ["start", "hmm"]
+    assert view.text == "Answer."
+    assert agent.messages[-1]["parts"] == [{"text": "Answer."}]
+
+
+def test_truncated_tool_call_is_not_run(tmp_path):
+    requests: list[dict] = []
+    target = tmp_path / "should-not-exist"
+    approver = FakeApprover()
+    agent, view = make_agent([
+        sse([chunk([{"functionCall": {"name": "run_command",
+                                      "args": {"command": f"touch {target}", "purpose": "x"}}}], "MAX_TOKENS")]),
+        sse([chunk([{"text": "sorry"}], "STOP")]),
+    ], requests, approver)
+    agent.ask("go")
+    assert not target.exists() and approver.commands == []
+    reply = requests[1]["body"]["contents"][-1]["parts"][0]["functionResponse"]
+    assert "error" in reply["response"]
+
+
+def test_empty_and_max_tokens_responses_notify():
+    agent, view = make_agent([sse([chunk([], "STOP")])], [])
+    agent.ask("hi")
+    assert any("empty" in n for n in view.notices)
+    agent, view = make_agent([sse([chunk([{"text": "cut"}], "MAX_TOKENS")])], [])
+    agent.ask("hi")
+    assert any("output limit" in n for n in view.notices)
+
+
+def test_invalid_tool_args_return_error_not_crash():
+    requests: list[dict] = []
+    agent, _ = make_agent([
+        sse([chunk([{"functionCall": {"name": "run_command", "args": {}}}], "STOP")]),
+        sse([chunk([{"text": "ok"}], "STOP")]),
+    ], requests)
+    agent.ask("go")
+    reply = requests[1]["body"]["contents"][-1]["parts"][0]["functionResponse"]["response"]
+    assert "INVALID_INPUT" in reply["error"]
+
+
+def test_consecutive_user_turns_merge():
+    requests: list[dict] = []
+    agent, _ = make_agent([sse([chunk([{"text": "x"}], "SAFETY")]), sse([chunk([{"text": "ok"}], "STOP")])],
+                          requests)
+    agent.ask("first")
+    agent.ask("second")
+    contents = requests[1]["body"]["contents"]
+    assert [c["role"] for c in contents] == ["user"] and len(contents[0]["parts"]) == 2
+
+
+# --- CLI wiring -----------------------------------------------------------
+
+@pytest.fixture
+def cli_env(monkeypatch, tmp_path):
+    from tux_app import cli
+    monkeypatch.setattr(gemini, "KEY_FILE", tmp_path / "gemini_key")
+    for var in gemini.KEY_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+    calls = {}
+    monkeypatch.setattr(cli, "run_api", lambda args, q, provider="anthropic": calls.update(api=provider, q=q))
+    monkeypatch.setattr(cli, "run_claude_code", lambda args, q: calls.update(claude=q))
+    return cli, calls
+
+
+def test_gemini_flag_skips_claude_code(cli_env, monkeypatch):
+    cli, calls = cli_env
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/claude")
+    cli.main(["--gemini", "is", "my", "ssd", "ok?"])
+    assert calls == {"api": "gemini", "q": "is my ssd ok?"}
+
+
+def test_plain_tux_prefers_claude_code(cli_env, monkeypatch):
+    cli, calls = cli_env
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/claude")
+    cli.main(["hello"])
+    assert calls == {"claude": "hello"}
+
+
+def test_falls_back_to_gemini_when_only_key_available(cli_env, monkeypatch):
+    cli, calls = cli_env
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setattr(cli, "_has_credentials", lambda: False)
+    gemini.save_key("abc")
+    cli.main(["hello"])
+    assert calls["api"] == "gemini"
+
+
+def test_anthropic_wins_without_gemini_key(cli_env, monkeypatch):
+    cli, calls = cli_env
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setattr(cli, "_has_credentials", lambda: False)
+    cli.main(["hello"])
+    assert calls["api"] == "anthropic"
+
+
+def test_gemini_key_command_saves_and_removes(cli_env, monkeypatch):
+    cli, calls = cli_env
+    monkeypatch.setattr(cli.Prompt, "ask", lambda *a, **k: "  secret  ")
+    cli.main(["gemini-key"])
+    assert gemini.load_key() == "secret" and not calls
+    cli.main(["gemini-key", "--remove"])
+    assert gemini.load_key() is None
+
+
+def test_run_api_without_key_exits(monkeypatch, tmp_path):
+    import argparse
+    from tux_app import cli
+    monkeypatch.setattr(gemini, "KEY_FILE", tmp_path / "gemini_key")
+    for var in gemini.KEY_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+    with pytest.raises(SystemExit):
+        cli.run_api(argparse.Namespace(), "", provider="gemini")

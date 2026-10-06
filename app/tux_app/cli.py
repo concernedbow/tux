@@ -361,6 +361,10 @@ def run_claude_code(args: argparse.Namespace, question: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["gemini-key"]:
+        gemini_key_command(argv[1:])  # has its own flags; keep them away from the main parser
+        return
     parser = argparse.ArgumentParser(
         prog="tux", description="An AI assistant that diagnoses and fixes problems on your Linux machine. "
         "Runs inside Claude Code (your Claude subscription) when it's installed, otherwise uses an "
@@ -387,10 +391,6 @@ def main(argv: list[str] | None = None) -> None:
     if args.question and args.question[0] == "monitor":
         # local and instant in both modes; no need to start Claude
         monitor_command(args.question[1:])
-        return
-
-    if args.question and args.question[0] == "gemini-key":
-        gemini_key_command(args.question[1:])
         return
 
     import shutil
