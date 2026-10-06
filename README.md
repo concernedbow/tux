@@ -204,7 +204,8 @@ claude --plugin-dir ./plugin --agent tux:tux   # try local plugin changes
 ```
 
 Contributions welcome, especially new diagnostic areas in `plugin/tux/sysinfo.py` and read-only
-commands in `plugin/tux/safety.py` (each new one needs a test).
+commands in `plugin/tux/safety.py`. See [CONTRIBUTING.md](CONTRIBUTING.md). Found a security problem?
+Please report it privately: see [SECURITY.md](SECURITY.md).
 
 ## License
 

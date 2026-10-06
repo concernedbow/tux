@@ -1,0 +1,55 @@
+name: Bug report
+description: tux did something wrong, crashed, or misdiagnosed a problem
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **Security problems** (safety bypasses, secret exposure) go to
+        [private reporting](https://github.com/concernedbow/tux/security/advisories/new) instead, not here.
+
+        Before pasting command output or a transcript, **remove anything private**: hostnames, usernames,
+        serial numbers, network names, IP addresses.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you asked tux, what it did, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The prompt or command, and any relevant system state.
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How are you running tux?
+      options:
+        - Claude Code plugin (claude --agent tux:tux, /tux:…)
+        - tux terminal app with an API key (tux --api)
+        - A helper directly (tux-scan, tux-undo, tux-monitor…)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: tux version
+      description: "`tux --version`, or the version shown by `claude plugin list`"
+      placeholder: "0.1.2"
+    validations:
+      required: true
+  - type: input
+    id: distro
+    attributes:
+      label: Distro and desktop
+      description: e.g. Ubuntu 26.04, KDE on Wayland
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant output (redacted)
+      description: Error messages, the relevant part of the transcript, or `tux-scan <area>` output.
+      render: text

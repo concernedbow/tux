@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest a diagnostic, a distro to support, or an improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: The situation where tux fell short, e.g. "it can't diagnose fingerprint readers".
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like tux to do?
+      description: If it's a new check, which commands would show the problem? Do they need root or the network?
+  - type: input
+    id: distro
+    attributes:
+      label: Distro (if relevant)
