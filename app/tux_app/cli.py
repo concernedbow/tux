@@ -18,7 +18,7 @@ from rich.text import Text
 from tux import __version__, journal, monitor, notes, sysinfo
 from tux.safety import Verdict
 
-from . import prompts, tools
+from . import gemini, prompts, tools
 from .agent import DEFAULT_MODEL, Agent
 
 console = Console()
@@ -229,7 +229,7 @@ def monitor_command(args: list[str], confirm: bool = True) -> None:
         console.print("[yellow]Usage: /monitor [on|off|status|report|check] [--every 1h|6h|12h|1d][/yellow]")
 
 
-def _run_turn(agent: Agent, view: TerminalView, text: str) -> None:
+def _run_turn(agent: Agent | gemini.GeminiAgent, view: TerminalView, text: str) -> None:
     try:
         agent.ask(text)
     except KeyboardInterrupt:
@@ -240,6 +240,21 @@ def _run_turn(agent: Agent, view: TerminalView, text: str) -> None:
         view.finish()
         _auth_help()
         sys.exit(1)
+    except gemini.GeminiAuthError as e:
+        view.finish()
+        console.print(f"[red]Gemini rejected the API key: {e}[/red]")
+        _gemini_auth_help()
+        sys.exit(1)
+    except gemini.GeminiRateLimit:
+        view.finish()
+        agent.repair()
+        console.print("[yellow]Gemini free-tier limit reached (requests per minute or per day). "
+                      "Wait a bit and try again, or switch to a smaller model with --model "
+                      "gemini-2.5-flash-lite.[/yellow]")
+    except gemini.GeminiError as e:
+        view.finish()
+        agent.repair()
+        console.print(f"[red]Gemini error: {e}[/red]")
     except anthropic.RateLimitError:
         view.finish()
         agent.repair()
@@ -265,6 +280,29 @@ def _auth_help() -> None:
         "Or log in with the Anthropic CLI: [bold]ant auth login[/bold]\n\n"
         "Have Claude Code? Install it and run [bold]tux[/bold] without --api to use your Claude subscription instead.",
         title="[red]Not authenticated[/red]", border_style="red"))
+
+
+def _gemini_auth_help() -> None:
+    console.print(Panel(
+        "tux can run on a [bold]free[/bold] Gemini API key, no billing needed.\n\n"
+        f"1. Get a key at {gemini.KEY_URL} (sign in with a Google account, click Create API key)\n"
+        "2. Run [bold]tux gemini-key[/bold] and paste it, or "
+        "[bold]export GEMINI_API_KEY=...[/bold] in your shell profile\n\n"
+        "Free-tier note: Google may use free-tier prompts to improve its products. See PRIVACY.md.",
+        title="[red]Gemini key needed[/red]", border_style="red"))
+
+
+def gemini_key_command(args: list[str]) -> None:
+    if args[:1] == ["--remove"]:
+        console.print("Removed the saved Gemini key." if gemini.forget_key() else "No saved Gemini key.")
+        return
+    console.print(f"Get a free key at [bold]{gemini.KEY_URL}[/bold], then paste it below.")
+    key = Prompt.ask("Gemini API key", password=True).strip()
+    if not key:
+        console.print("[yellow]No key entered.[/yellow]")
+        return
+    path = gemini.save_key(key)
+    console.print(f"[green]Saved[/green] to {path} (readable only by you). Use it with [bold]tux --gemini[/bold].")
 
 
 def _has_credentials() -> bool:
@@ -326,10 +364,12 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="tux", description="An AI assistant that diagnoses and fixes problems on your Linux machine. "
         "Runs inside Claude Code (your Claude subscription) when it's installed, otherwise uses an "
-        "Anthropic API key.")
+        "Anthropic API key or a free Gemini API key.")
     parser.add_argument("question", nargs="*", help="ask a one-off question ('doctor' runs a health check)")
     parser.add_argument("--api", action="store_true",
                         help="use the built-in terminal app with an Anthropic API key instead of Claude Code")
+    parser.add_argument("--gemini", action="store_true",
+                        help="use the built-in terminal app with a (free) Gemini API key; see `tux gemini-key`")
     parser.add_argument("--read-only", action="store_true", help="diagnose only; never change anything")
     parser.add_argument("--yes", action="store_true",
                         help="(API mode) approve every change without asking; blocked commands stay blocked")
@@ -349,15 +389,30 @@ def main(argv: list[str] | None = None) -> None:
         monitor_command(args.question[1:])
         return
 
+    if args.question and args.question[0] == "gemini-key":
+        gemini_key_command(args.question[1:])
+        return
+
     import shutil
+    if args.gemini:
+        run_api(args, question, provider="gemini")
+        return
     if not args.api and shutil.which("claude"):
         run_claude_code(args, question)
         return
-    run_api(args, question)
+    # no Claude Code and no Anthropic credentials, but a Gemini key is available: use it
+    provider = "gemini" if not _has_credentials() and gemini.load_key() else "anthropic"
+    run_api(args, question, provider=provider)
 
 
-def run_api(args: argparse.Namespace, question: str) -> None:
-    if not _has_credentials():
+def run_api(args: argparse.Namespace, question: str, provider: str = "anthropic") -> None:
+    key = None
+    if provider == "gemini":
+        key = gemini.load_key()
+        if not key:
+            _gemini_auth_help()
+            sys.exit(1)
+    elif not _has_credentials():
         _auth_help()
         sys.exit(1)
 
@@ -365,7 +420,12 @@ def run_api(args: argparse.Namespace, question: str) -> None:
     ctx = tools.ToolContext(approver=TerminalApprover(view, auto_yes=args.yes), read_only=args.read_only,
                             on_line=view.stream_line)
     with console.status("[dim]looking at your system…[/dim]"):
-        agent = Agent(view=view, ctx=ctx, model=args.model, effort=args.effort, web=not args.no_web)
+        if provider == "gemini":
+            model = gemini.DEFAULT_MODEL if args.model == DEFAULT_MODEL else args.model
+            agent = gemini.GeminiAgent(view=view, ctx=ctx, api_key=key, model=model,
+                                       show_thinking=args.show_thinking)
+        else:
+            agent = Agent(view=view, ctx=ctx, model=args.model, effort=args.effort, web=not args.no_web)
 
     if question:
         _run_turn(agent, view, prompts.DOCTOR_PROMPT if question == "doctor" else question)

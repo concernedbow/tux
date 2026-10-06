@@ -87,6 +87,22 @@ If it isn't, `tux` runs its own terminal app on the Anthropic API. That needs an
 (`export ANTHROPIC_API_KEY=sk-ant-...`), and usage is billed per token. Pass `--api` to use API mode
 even when Claude Code is installed.
 
+### Option C: a free Gemini API key
+
+No Claude account or billing needed. Get a free key from [Google AI Studio](https://aistudio.google.com/apikey),
+then give it to tux:
+
+```bash
+tux gemini-key        # paste the key; saved to ~/.config/tux/gemini_key (owner-only)
+tux --gemini          # run on Gemini (also: GEMINI_API_KEY=... in your environment)
+tux --gemini --model gemini-2.5-flash-lite "why is boot so slow?"
+```
+
+If there is no Claude Code and no Anthropic key but a Gemini key is set up, plain `tux` uses it
+automatically. Run `tux gemini-key --remove` to delete the saved key. The default model is
+`gemini-2.5-flash`. The free tier has per-minute and per-day request limits, and Gemini mode has no
+web search. Everything else (safety classifier, approvals, undo, monitoring) works the same.
+
 ## Safety model
 
 tux runs commands on your real machine, so every command is classified before it runs:

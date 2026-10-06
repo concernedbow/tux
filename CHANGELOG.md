@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add Gemini support: run `tux --gemini` with a free API key from Google AI Studio. Save the key with
+  `tux gemini-key` or set `GEMINI_API_KEY`. No web search in Gemini mode.
+
 ## 0.1.2
 
 - Declare the diagnostic checks that contact outside services: the connectivity test (pings 1.1.1.1,

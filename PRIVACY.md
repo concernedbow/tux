@@ -14,6 +14,7 @@ of the conversation with Claude and is sent to **Anthropic**: your messages, com
 |---|---|---|
 | Claude Code plugin (`claude --agent tux:tux`, `/tux:…`) | Anthropic, through Claude Code, under your Claude account | Your Claude plan's terms and [Anthropic's Privacy Policy](https://www.anthropic.com/legal/privacy) |
 | `tux --api` (terminal app with an API key) | Anthropic's API, using your API key | [Anthropic's Commercial Terms](https://www.anthropic.com/legal/commercial-terms) and [Privacy Policy](https://www.anthropic.com/legal/privacy) |
+| `tux --gemini` (terminal app with a Gemini API key) | Google's Gemini API, using your key. On the free tier, Google may use prompts and responses to improve its products | [Gemini API Terms](https://ai.google.dev/gemini-api/terms) |
 | Web search (to look up error messages and known bugs) | Search queries Claude writes. These go through Claude Code's web search in plugin mode, or Anthropic's web search tool in API mode (unless `--no-web`). | Same as above |
 | Background monitor (`tux-monitor`) | **Nowhere.** Checks run locally, and notifications are local desktop notifications | n/a |
 
